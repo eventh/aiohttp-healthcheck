@@ -1,23 +1,28 @@
 #!/usr/bin/env python
+import sys
+from setuptools import setup
 
-from setuptools import setup, find_packages
 
-setup(name='healthcheck',
+install_requires = ['aiohttp>=1.1.1']
+
+
+setup(name='aiohttp_healthcheck',
       version='1.3.1',
-      description='Adds healthcheck endpoints to Flask apps',
+      description='Adds healthcheck endpoints to aiohttp apps. Based on https://github.com/Runscope/healthcheck.',
       author='Frank Stratton',
       author_email='frank@runscope.com',
-      url='https://github.com/Runscope/healthcheck',
-      download_url='https://github.com/Runscope/healthcheck/tarball/1.3.1',
-      packages=find_packages(),
-      zip_safe=False,
-      include_package_data=True,
+      maintainer='Brannon Jones',
+      maintainer_email='brannonj@gmail.com',
+      url='https://github.com/brannon/aiohttp-healthcheck',
+      packages=['aiohttp_healthcheck'],
+      zip_safe=True,
       license='MIT',
       platforms='any',
-      install_requires=[],
-      test_requires=['flask'],
-      test_suite='test_healthcheck',
+#      python_requires='>=3.4.2',
+      install_requires=install_requires,
       classifiers=('Development Status :: 5 - Production/Stable',
                    'Environment :: Web Environment',
-                   'Framework :: Flask',
-                   'Programming Language :: Python'))
+                   'Programming Language :: Python',
+                   'Programming Language :: Python :: 3',
+                   'Programming Language :: Python :: 3.4',
+                   'Programming Language :: Python :: 3.5'))

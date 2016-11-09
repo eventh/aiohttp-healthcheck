@@ -1,12 +1,13 @@
+import asyncio
 import imp
 import json
 import os
-import six
+import logging
 import socket
 import sys
 import time
 import traceback
-from flask import current_app
+from aiohttp import web
 try:
     from functools import reduce
 except Exception:
@@ -44,12 +45,12 @@ def check_reduce(passed, result):
 
 
 class HealthCheck(object):
-    def __init__(self, app=None, path=None, success_status=200,
-                 success_headers=None, success_handler=json_success_handler,
-                 success_ttl=27, failed_status=500, failed_headers=None,
+    def __init__(self, success_status=200, success_headers=None,
+                 success_handler=json_success_handler, success_ttl=27,
+                 failed_status=500, failed_headers=None,
                  failed_handler=json_failed_handler, failed_ttl=9,
                  exception_handler=basic_exception_handler, checkers=None,
-                 **options):
+                 logger=None, **options):
         self.cache = dict()
 
         self.success_status = success_status
@@ -67,23 +68,29 @@ class HealthCheck(object):
         self.options = options
         self.checkers = checkers or []
 
-        if app:
-            self.init_app(app, path)
+        self.logger = logger
+        if not self.logger:
+            self.logger = logging.getLogger('HealthCheck')
 
-    def init_app(self, app, path):
-        if path:
-            app.add_url_rule(path, view_func=self.check, **self.options)
+    @asyncio.coroutine
+    def __call__(self, request):
+        message, status, headers = yield from self.check()
+        return web.Response(text=message, status=status, headers=headers)
 
     def add_check(self, func):
+        if not asyncio.iscoroutinefunction(func):
+            func = asyncio.coroutine(func)
+
         self.checkers.append(func)
 
+    @asyncio.coroutine
     def check(self):
         results = []
         for checker in self.checkers:
             if checker in self.cache and self.cache[checker].get('expires') >= time.time():
                 result = self.cache[checker]
             else:
-                result = self.run_check(checker)
+                result = yield from self.run_check(checker)
                 self.cache[checker] = result
             results.append(result)
 
@@ -102,18 +109,19 @@ class HealthCheck(object):
 
             return message, self.failed_status, self.failed_headers
 
+    @asyncio.coroutine
     def run_check(self, checker):
         try:
-            passed, output = checker()
+            passed, output = yield from checker()
         except Exception:
             traceback.print_exc()
             e = sys.exc_info()[0]
-            current_app.logger.exception(e)
+            self.logger.exception(e)
             passed, output = self.exception_handler(checker, e)
 
         if not passed:
             msg = 'Health check "{}" failed with output "{}"'.format(checker.__name__, output)
-            current_app.logger.error(msg)
+            self.logger.error(msg)
 
         timestamp = time.time()
         if passed:
@@ -130,46 +138,47 @@ class HealthCheck(object):
 
 
 class EnvironmentDump(object):
-    def __init__(self, app=None, path=None,
-                 include_os=True, include_python=True,
-                 include_config=True, include_process=True):
+    def __init__(self,
+                 include_os=True,
+                 include_python=True,
+                 include_process=True):
         self.functions = {}
         if include_os:
             self.functions['os'] = self.get_os
         if include_python:
             self.functions['python'] = self.get_python
-        if include_config:
-            self.functions['config'] = self.get_config
         if include_process:
             self.functions['process'] = self.get_process
 
-        if app:
-            self.init_app(app, path)
-
-    def init_app(self, app, path):
-        if path:
-            app.add_url_rule(path, view_func=self.dump_environment)
+    @asyncio.coroutine
+    def __call__(self, request):
+        data = yield from self.dump_environment()
+        return web.json_response(data)
 
     def add_section(self, name, func):
         if name in self.functions:
             raise Exception('The name "{}" is already taken.'.format(name))
+
+        if not asyncio.iscoroutinefunction(func):
+            func = asyncio.coroutine(func)
+
         self.functions[name] = func
 
+    @asyncio.coroutine
     def dump_environment(self):
         data = {}
-        for (name, func) in six.iteritems(self.functions):
-            data[name] = func()
+        for name, func in self.functions.items():
+            data[name] = yield from func()
 
-        return json.dumps(data), 200, {'Content-Type': 'application/json'}
+        return data
 
+    @asyncio.coroutine
     def get_os(self):
         return {'platform': sys.platform,
                 'name': os.name,
                 'uname': os.uname()}
 
-    def get_config(self):
-        return self.safe_dump(current_app.config)
-
+    @asyncio.coroutine
     def get_python(self):
         result = {'version': sys.version,
                   'executable': sys.executable,
@@ -186,6 +195,7 @@ class EnvironmentDump(object):
 
         return result
 
+    @asyncio.coroutine
     def get_login(self):
         # Based on https://github.com/gitpython-developers/GitPython/pull/43/
         # Fix for 'Inappopropirate ioctl for device' on posix systems.
@@ -198,10 +208,11 @@ class EnvironmentDump(object):
                 username = os.getlogin()
         return username
 
+    @asyncio.coroutine
     def get_process(self):
         return {'argv': sys.argv,
                 'cwd': os.getcwd(),
-                'user': self.get_login(),
+                'user': (yield from self.get_login()),
                 'pid': os.getpid(),
                 'environ': self.safe_dump(os.environ)}
 

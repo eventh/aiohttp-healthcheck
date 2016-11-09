@@ -1,75 +1,82 @@
-from __future__ import with_statement
-
+import json
 import unittest
-import flask
-from healthcheck import HealthCheck, EnvironmentDump
+from aiohttp import web
+from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
+from aiohttp_healthcheck import HealthCheck, EnvironmentDump
 
 
-class BasicHealthCheckTest(unittest.TestCase):
+class BasicHealthCheckTest(AioHTTPTestCase):
+    path = '/h'
 
     def setUp(self):
-        self.path = '/h'
-        self.app = flask.Flask(__name__)
-        self.hc = self._hc()
-        self.client = self.app.test_client()
+        self.hc = HealthCheck()
+        super().setUp()
 
-    def _hc(self):
-        return HealthCheck(self.app, self.path)
+    def get_app(self, loop):
+        app = web.Application(loop=loop)
+        app.router.add_get(self.path, self.hc)
+        return app
 
-    def test_basic_check(self):
-        response = self.client.get(self.path)
-        self.assertEqual(200, response.status_code)
+    @unittest_run_loop
+    async def test_basic_check(self):
+        response = await self.client.get(self.path)
+        self.assertEqual(200, response.status)
 
-    def test_failing_check(self):
-        def fail_check():
+    @unittest_run_loop
+    async def test_failing_check(self):
+        async def fail_check():
             return False, "FAIL"
 
         self.hc.add_check(fail_check)
-        response = self.client.get(self.path)
-        self.assertEqual(500, response.status_code)
+        response = await self.client.get(self.path)
+        self.assertEqual(500, response.status)
+
+    @unittest_run_loop
+    async def test_sync_check(self):
+        def test_check():
+            return True, "OK"
+
+        self.hc.add_check(test_check)
+        response = await self.client.get(self.path)
+        self.assertEqual(200, response.status)
 
 
-class BasicEnvironmentDumpTest(unittest.TestCase):
+class BasicEnvironmentDumpTest(AioHTTPTestCase):
+    path = '/e'
 
     def setUp(self):
-        self.path = '/e'
-        self.app = flask.Flask(__name__)
-        self.hc = self._hc()
-        self.client = self.app.test_client()
+        self.hc = EnvironmentDump()
+        super().setUp()
 
-    def _hc(self):
-        return EnvironmentDump(self.app, self.path)
+    def get_app(self, loop):
+        app = web.Application(loop=loop)
+        app.router.add_get(self.path, self.hc)
+        return app
 
-    def test_basic_check(self):
+    @unittest_run_loop
+    async def test_basic_check(self):
+        async def test_ok():
+            return "OK"
+
+        self.hc.add_section("test_func", test_ok)
+
+        response = await self.client.get(self.path)
+        self.assertEqual(200, response.status)
+        jr = await response.json()
+        self.assertEqual("OK", jr["test_func"])
+
+    @unittest_run_loop
+    async def test_sync_check(self):
         def test_ok():
             return "OK"
 
         self.hc.add_section("test_func", test_ok)
 
-        response = self.client.get(self.path)
-        self.assertEqual(200, response.status_code)
-        jr = flask.json.loads(response.data)
+        response = await self.client.get(self.path)
+        self.assertEqual(200, response.status)
+        jr = await response.json()
         self.assertEqual("OK", jr["test_func"])
 
-
-class LazyHealthCheckTest(BasicHealthCheckTest):
-
-    def setUp(self):
-        super(LazyHealthCheckTest, self).setUp()
-        self.hc.init_app(self.app, self.path)
-
-    def _hc(self):
-        return HealthCheck()
-
-
-class LazyEnvironmentDumpTest(unittest.TestCase):
-
-    def setUp(self):
-        super(LazyEnvironmentDumpTest, self).setUp()
-        self.hc.init_app(self.app, self.path)
-
-    def _hc(self):
-        return EnvironmentDump()
 
 if __name__ == '__main__':
     unittest.main()
