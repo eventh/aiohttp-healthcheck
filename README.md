@@ -1,4 +1,4 @@
-[![CircleCI](https://circleci.com/gh/brannon/aiohttp-healthcheck.svg?style=svg)](https://circleci.com/gh/brannon/aiohttp-healthcheck)
+[![CircleCI](https://circleci.com/gh/brannon/aiohttp-healthcheck.svg?style=shield)](https://circleci.com/gh/brannon/aiohttp-healthcheck)
 
 Healthcheck
 -----------
