@@ -14,7 +14,7 @@ class BasicHealthCheckTest(AioHTTPTestCase):
 
     async def get_application(self):
         app = web.Application()
-        app.router.add_get(self.path, self.hc)
+        app.router.add_get(self.path, self.hc.__call__)
         return app
 
     @unittest_run_loop
@@ -50,7 +50,7 @@ class BasicEnvironmentDumpTest(AioHTTPTestCase):
 
     async def get_application(self):
         app = web.Application()
-        app.router.add_get(self.path, self.hc)
+        app.router.add_get(self.path, self.hc.__call__)
         return app
 
     @unittest_run_loop
